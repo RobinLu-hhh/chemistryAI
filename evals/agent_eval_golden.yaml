@@ -1,0 +1,467 @@
+# ChemAI Agent 黄金测试数据集
+# 来自: LangSmith trajectory-evals + pytest-agent-eval + Rubric 的模式
+# 测试的不是回复文本，是 agent 的行为轨迹 (tool calls + 参数 + 顺序)
+#
+# 2026-06-30: 更新至 v2 单Agent 架构 — generate_questions 已废弃,
+#   show_exam_workbench 替代出题功能, import_exam_paper 已移除.
+
+scenarios:
+  # ── 闲聊: 不应调任何 tool ──
+  - id: "chat-greeting"
+    description: "闲聊消息不应触发任何 tool 调用"
+    input: "你好"
+    persona: "tutor"
+    assertions:
+      - type: "tool_count"
+        expected: 0
+      - type: "has_text_response"
+
+  # ── 知识问答: 调 chemistry_tutor ──
+  - id: "knowledge-redox"
+    description: "知识问答应调 chemistry_tutor"
+    input: "什么是氧化还原反应"
+    persona: "tutor"
+    assertions:
+      - type: "tool_count"
+        gte: 1
+      - type: "tool_called"
+        name: "chemistry_tutor"
+      - type: "has_text_response"
+
+  # ── 搜索真题 ──
+  - id: "search-exam-bank"
+    description: "搜索真题应调 search_exam_bank, 返回 questions 列表"
+    input: "搜索3条盐类水解的高考真题"
+    persona: "tutor"
+    assertions:
+      - type: "tool_called"
+        name: "search_exam_bank"
+      - type: "tool_arg_contains"
+        name: "search_exam_bank"
+        arg: "keyword"
+
+  # ── 出题 (无 student) → 调 show_exam_workbench ──
+  - id: "gen-questions-no-student"
+    description: "无学生名的出题应调 show_exam_workbench（面板出题）"
+    input: "出5道关于电化学的选择题，中等难度"
+    persona: "tutor"
+    assertions:
+      - type: "tool_called"
+        name: "show_exam_workbench"
+      - type: "tool_arg_contains"
+        name: "show_exam_workbench"
+        arg: "knowledge_points"
+
+  # ── 出题 (有 student) → 调 show_exam_workbench ──
+  - id: "gen-questions-with-student"
+    description: "有学生名的出题应调 show_exam_workbench（面板可配学生）"
+    input: "给张三出3道关于氧化还原的选择题"
+    persona: "tutor"
+    assertions:
+      - type: "tool_called"
+        name: "show_exam_workbench"
+      - type: "tool_arg_contains"
+        name: "show_exam_workbench"
+        arg: "knowledge_points"
+
+  # ── 单人诊断: 不跳 ──
+  - id: "diagnose-single"
+    description: "单人诊断应调 diagnose_barrier, 不跳页"
+    input: "学生E最近错题多吗"
+    persona: "teacher"
+    assertions:
+      - type: "tool_called"
+        name: "diagnose_barrier"
+      - type: "route"
+        navigate: false
+
+  # ── 班级诊断: 调 diagnose_barrier ──
+  - id: "diagnose-class"
+    description: "班级诊断应调 diagnose_barrier（通过 _component 渲染面板）"
+    input: "高三1班的诊断情况"
+    persona: "teacher"
+    assertions:
+      - type: "tool_called"
+        name: "diagnose_barrier"
+
+  # ── 周报 ──
+  - id: "weekly-report"
+    description: "生成单人周报"
+    input: "生成学生E的本周学习报告"
+    persona: "parent"
+    assertions:
+      - type: "tool_called"
+        name: "weekly_report"
+      - type: "route"
+        navigate: false
+
+  # ── 配平 ──
+  - id: "balance-equation"
+    description: "配平化学方程式"
+    input: "帮我配平 Fe + O2 = Fe2O3"
+    persona: "tutor"
+    assertions:
+      - type: "tool_called"
+        name: "balance_equation"
+      - type: "tool_arg_contains"
+        name: "balance_equation"
+        arg: "equation"
+
+  # ── 纯页面跳转 (不进 agent) ──
+  - id: "navigate-exam"
+    description: "打开考试工作台 → navigate, 不调 tool"
+    input: "打开考试工作台"
+    persona: "tutor"
+    assertions:
+      - type: "tool_count"
+        expected: 0
+      - type: "route"
+        navigate: true
+        page: "exam-v2"
+
+  - id: "navigate-diagnosis"
+    description: "打开诊断页面 → navigate, 不调 tool"
+    input: "打开诊断页面"
+    persona: "teacher"
+    assertions:
+      - type: "tool_count"
+        expected: 0
+      - type: "route"
+        navigate: true
+        page: "diagnosis"
+
+  # ── 模糊需求: Agent 应反问, 不瞎出 ──
+  - id: "ambiguous-exam-request"
+    description: "信息不足时 agent 应反问而非盲目生成"
+    input: "帮我准备一份期中考试"
+    persona: "tutor"
+    assertions:
+      - type: "not_tool_called"
+        name: "show_exam_workbench"
+      - type: "has_text_response"
+      - type: "text_contains_one_of"
+        values: ["范围", "班级", "难度", "知识点", "数量", "章节"]
+
+  # ── 直接出题（参数齐全）──
+  - id: "gen-questions-direct"
+    description: "参数齐全的出题应调 generate_questions 直接出题"
+    input: "出5道氧化还原的选择题，中等难度"
+    persona: "tutor"
+    assertions:
+      - type: "tool_called"
+        name: "generate_questions"
+      - type: "tool_arg_contains"
+        name: "generate_questions"
+        arg: "knowledge_points"
+
+  # ── 出题参数不全→开面板 ──
+  - id: "gen-questions-incomplete"
+    description: "参数不全应调 show_exam_workbench 开面板"
+    input: "帮我出几道题"
+    persona: "tutor"
+    assertions:
+      - type: "tool_called"
+        name: "show_exam_workbench"
+
+  # ── 导入试卷 (import_exam_paper 已移除, 由 Baidu OCR pipeline 替代) ──
+  - id: "import-paper"
+    description: "导入试卷 → 调 show_exam_workbench（通过面板上传）"
+    input: "导入这份PDF试卷"
+    persona: "teacher"
+    assertions:
+      - type: "tool_called"
+        name: "show_exam_workbench"
+
+  # ── 自适应练习 ──
+  - id: "adaptive-practice"
+    description: "布置自适应练习"
+    input: "给班级布置自适应练习"
+    persona: "teacher"
+    assertions:
+      - type: "tool_called"
+        name: "assign_adaptive_practice"
+
+  # ── 实验模拟 ──
+  - id: "simulate-experiment"
+    description: "模拟化学实验"
+    input: "模拟酸碱中和滴定实验"
+    persona: "tutor"
+    assertions:
+      - type: "tool_called"
+        name: "simulate_experiment"
+
+  # ── 联网搜索 ──
+  - id: "web-search"
+    description: "联网搜索最新信息"
+    input: "搜索2025年高考化学大纲变化"
+    persona: "tutor"
+    assertions:
+      - type: "tool_called"
+        name: "web_search"
+
+# ── LangGraph 特有场景 ──
+langgraph_scenarios:
+  - id: "react-multi-tool"
+    description: "ReAct: 连续调多个 tool (search → show_exam_workbench)"
+    input: "搜索电化学的真题，然后根据真题出3道类似题"
+    persona: "tutor"
+    assertions:
+      - type: "tool_trajectory_order"
+        expected: ["search_exam_bank", "show_exam_workbench"]
+
+  - id: "react-approval-flow"
+    description: "Agent 出题后调 request_approval 请老师确认"
+    input: "出3道氧化还原选择题，中等难度，出完请我确认"
+    persona: "tutor"
+    assertions:
+      - type: "tool_trajectory_order"
+        expected: ["show_exam_workbench", "request_approval"]
+
+  - id: "interrupt-resume"
+    description: "interrupt 后 resume, 状态不丢, tool 结果保持"
+    input: "出5道题，我要先看看"
+    persona: "tutor"
+    assertions:
+      - type: "interrupt_triggered"
+      - type: "after_resume_tool_called"
+        name: "show_exam_workbench"
+
+  - id: "guardrail-recursion-limit"
+    description: "达到 recursion_limit 时优雅停止, 不崩溃不无限循环"
+    input: "出题、检查、再出、再检查、再出、再检查、再出、再检查、再出"
+    persona: "tutor"
+    assertions:
+      - type: "max_tool_calls"
+        lte: 8
+      - type: "no_error"
+
+  - id: "guardrail-approval-enforcement"
+    description: "LLM 试图跳过 request_approval 调 assign_adaptive_practice 时应被拒绝"
+    input: "直接给高三1班布置自适应练习，不要问我"
+    persona: "teacher"
+    assertions:
+      - type: "tool_blocked"
+        name: "assign_adaptive_practice"
+        reason: "requires_approval"
+
+  - id: "guardrail-tool-dedup"
+    description: "LLM 重复调同一 tool 同一参数时应被检测和阻止"
+    input: "搜索真题，再搜索真题，再搜索真题"
+    persona: "tutor"
+    assertions:
+      - type: "dedup_triggered"
+
+  - id: "multi-turn-context"
+    description: "3 轮对话中第 3 轮引用第 1 轮内容, agent 正确理解"
+    turns:
+      - input: "帮我出5道关于氧化还原的选择题"
+      - input: "太多了，改成3道"
+      - input: "把难度改成困难"
+    assertions:
+      - type: "tool_trajectory_order"
+        expected: ["show_exam_workbench", "show_exam_workbench", "show_exam_workbench"]
+
+# SSE 事件格式断言
+sse_scenarios:
+  - id: "sse-tool-event-fields"
+    description: "所有 SSE 事件类型字段完整且类型正确"
+    assertions:
+      - event_type: "phase"
+        required_fields: ["type", "phase"]
+      - event_type: "text"
+        required_fields: ["type", "content"]
+      - event_type: "tool_call"
+        required_fields: ["type", "name", "tool", "args"]
+      - event_type: "tool_result"
+        required_fields: ["type", "name", "tool", "success", "result"]
+      - event_type: "navigate"
+        required_fields: ["type", "page", "params"]
+      - event_type: "populate"
+        required_fields: ["type", "target", "data"]
+      - event_type: "action"
+        required_fields: ["type", "action", "payload"]
+      - event_type: "done"
+        required_fields: ["type"]
+
+  - id: "sse-event-order"
+    description: "SSE 事件顺序: thinking → (tool_call → tool_result)* → reply → text* → (navigate)? → done → [DONE]"
+    input: "出3道氧化还原选择题"
+    persona: "tutor"
+    assertions:
+      - type: "event_order"
+        constraints:
+          - "phase:thinking_before_tool_call"
+          - "tool_call_before_tool_result"
+          - "tool_result_before_phase_reply"
+          - "done_after_all_events"
+          - "done_sentinel_present"
+
+  - id: "sse-awaiting-approval"
+    description: "request_approval 不产生 tool_call/tool_result, 产生 phase:awaiting_approval"
+    input: "出5道题，出完请我确认"
+    persona: "tutor"
+    assertions:
+      - type: "event_not_present"
+        event_type: "tool_call"
+        name: "request_approval"
+      - type: "event_not_present"
+        event_type: "tool_result"
+        name: "request_approval"
+      - type: "event_present"
+        event_type: "phase"
+        phase: "awaiting_approval"
+
+# ── 工作流完整性场景 (2026-06-30 更新至 v2) ──
+# show_exam_workbench 替代 generate_questions 作为出题入口
+workflow_scenarios:
+  - id: "wf-empty-kp-must-ask"
+    description: "空知识点→Agent 必须反问，不得盲出"
+    input: "根据高考真题出变种题"
+    persona: "tutor"
+    assertions:
+      - type: "not_tool_called"
+        name: "show_exam_workbench"
+      - type: "has_text_response"
+      - type: "text_contains_one_of"
+        values: ["知识点", "难度", "几道", "什么"]
+
+  - id: "wf-generate-then-save"
+    description: "出题（无学生）→调 show_exam_workbench（面板内置出题+保存）"
+    input: "出3道氧化还原的选择题，中等难度"
+    persona: "tutor"
+    assertions:
+      - type: "tool_called"
+        name: "show_exam_workbench"
+
+  - id: "wf-generate-for-student-no-save"
+    description: "出题（有学生）→调 show_exam_workbench（面板可配学生）"
+    input: "给学生E出3道盐类水解的中等难度选择题"
+    persona: "teacher"
+    assertions:
+      - type: "tool_called"
+        name: "show_exam_workbench"
+
+  - id: "wf-search-then-ask"
+    description: "搜索后信息不足→应反问而非擅自出题"
+    input: "搜索盐类水解真题"
+    persona: "tutor"
+    assertions:
+      - type: "tool_called"
+        name: "search_exam_bank"
+      - type: "has_text_response"
+
+  - id: "wf-save-to-bank-then-navigate"
+    description: "save_to_bank 成功后应跳转到考试工作台题库 tab（需要会话上下文）"
+    input: "把刚才的题目保存起来"
+    persona: "teacher"
+    assertions:
+      - type: "tool_called"
+        name: "save_to_bank"
+      - type: "route"
+        navigate: true
+        page: "exam-v2"
+
+  - id: "wf-overcalling-search"
+    description: "重复搜索应被限制（max_tool_calls <= 2）"
+    input: "搜索真题，再搜索真题，再搜索真题"
+    persona: "tutor"
+    assertions:
+      - type: "max_tool_calls"
+        lte: 2
+
+  - id: "wf-persona-cross-teacher"
+    description: "同一输入对 teacher persona 应调 diagnose_barrier"
+    input: "S001最近怎么样"
+    persona: "teacher"
+    assertions:
+      - type: "tool_called"
+        name: "diagnose_barrier"
+
+  - id: "wf-persona-cross-parent"
+    description: "同一输入对 parent persona 应调 weekly_report"
+    input: "S001最近怎么样"
+    persona: "parent"
+    assertions:
+      - type: "tool_called"
+        name: "weekly_report"
+
+  - id: "wf-route-actions-complete"
+    description: "出题面板调用正确（v2: show_exam_workbench）"
+    input: "出3道氧化还原的选择题，中等难度"
+    persona: "tutor"
+    assertions:
+      - type: "tool_called"
+        name: "show_exam_workbench"
+
+  - id: "wf-missing-info-blocked"
+    description: "空知识点 → GuardState block，agent 反问而非出题"
+    input: "生成几道题"
+    persona: "tutor"
+    assertions:
+      - type: "not_tool_called"
+        name: "show_exam_workbench"
+      - type: "has_text_response"
+      - type: "text_contains_one_of"
+        values: ["知识点", "什么", "哪个"]
+
+# ── 内联面板 + Agent 行为 evals ──
+inline_panel_scenarios:
+  - id: "panel-show-on-exam-intent"
+    description: "用户说'我要出题' → Agent 应直接调 show_exam_workbench，不反问"
+    input: "我要出题"
+    persona: "teacher"
+    assertions:
+      - type: "tool_called"
+        name: "show_exam_workbench"
+      - type: "not_tool_called"
+        name: "search_exam_bank"
+
+  - id: "panel-no-search-on-generate"
+    description: "用户说'出氧化还原选择题' → 应调 show_exam_workbench，不搜真题"
+    input: "出3道氧化还原的选择题，中等难度"
+    persona: "teacher"
+    assertions:
+      - type: "tool_called"
+        name: "show_exam_workbench"
+      - type: "not_tool_called"
+        name: "search_exam_bank"
+
+  - id: "panel-immediate-no-questions"
+    description: "出题意图 → 直接调用工具，不反问用户参数"
+    input: "我想出高考变种题"
+    persona: "teacher"
+    assertions:
+      - type: "tool_called"
+        name: "show_exam_workbench"
+
+  - id: "panel-search-only-on-explicit-search"
+    description: "用户明确说'搜索真题'时才能搜，说'出题'不能搜"
+    input: "搜索氧化还原真题"
+    persona: "tutor"
+    assertions:
+      - type: "tool_called"
+        name: "search_exam_bank"
+      - type: "not_tool_called"
+        name: "show_exam_workbench"
+
+# ── 已知架构缺口 (known_gaps) ──
+known_gaps:
+  - id: "gap-search-json-not-db"
+    description: "search_exam_bank 只读 JSON 文件+样本数据，不读 SQLite。Agent 保存到题库的题目无法被 agent 搜索到。"
+    severity: "high"
+    recommendation: "search_exam_bank 应同时查询 QuestionSet/Question 表，或 save_to_bank 时同步写入 ExamBankService 索引。"
+
+  - id: "gap-no-auto-save"
+    description: "show_exam_workbench 通过前端面板出题，保存流程由用户在面板中触发。Agent 无法自动触发保存流程。"
+    severity: "medium"
+    recommendation: "面板出题完成后，前端应通知 Agent 题目已保存，触发后续操作。"
+
+  - id: "gap-llm-skips-approval"
+    description: "LLM 不可靠地跳过 request_approval。即使明确说'出完请我确认'，仍有概率忽略。"
+    severity: "medium"
+    recommendation: "考虑在 assign_adaptive_practice/delete_bank 执行前强制调 request_approval。"
+
+  - id: "gap-route-persistence"
+    description: "_route 通过 SSE 事件传递但不持久化。前端未打开或刷新后 route 数据丢失。"
+    severity: "low"
+    recommendation: "将 last_route 存入 session/conversation 记录中，前端轮询或 re-mount 时可恢复。"

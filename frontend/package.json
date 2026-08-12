@@ -1,0 +1,22 @@
+{
+  "name": "frontend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "app.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "echo \"No frontend tests are configured; test command intentionally exits with failure.\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@rolldown/pluginutils": "^1.0.1",
+    "vite": "^8.0.14"
+  },
+  "dependencies": {
+    "katex": "^0.17.0",
+    "marked": "^18.0.5"
+  }
+}
